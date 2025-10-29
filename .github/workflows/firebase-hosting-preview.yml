@@ -1,0 +1,29 @@
+name: Preview deploy on PR
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_and_preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: |
+          cat > .env.local << 'EOF'
+          VITE_FB_API_KEY=${{ secrets.VITE_FB_API_KEY }}
+          VITE_FB_AUTH_DOMAIN=${{ secrets.VITE_FB_AUTH_DOMAIN }}
+          VITE_FB_PROJECT_ID=${{ secrets.VITE_FB_PROJECT_ID }}
+          VITE_FB_STORAGE_BUCKET=${{ secrets.VITE_FB_STORAGE_BUCKET }}
+          VITE_FB_SENDER_ID=${{ secrets.VITE_FB_SENDER_ID }}
+          VITE_FB_APP_ID=${{ secrets.VITE_FB_APP_ID }}
+          EOF
+      - run: npm run build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          projectId: sarvtek-niche-finder
+        # (no channelId -> auto ephemeral preview per PR)
