@@ -3,16 +3,27 @@ name: Preview deploy on PR
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   build_and_preview:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
-      - run: |
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .env.local (Vite)
+        run: |
           cat > .env.local << 'EOF'
           VITE_FB_API_KEY=${{ secrets.VITE_FB_API_KEY }}
           VITE_FB_AUTH_DOMAIN=${{ secrets.VITE_FB_AUTH_DOMAIN }}
@@ -21,9 +32,27 @@ jobs:
           VITE_FB_SENDER_ID=${{ secrets.VITE_FB_SENDER_ID }}
           VITE_FB_APP_ID=${{ secrets.VITE_FB_APP_ID }}
           EOF
-      - run: npm run build
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+
+      - name: Build
+        run: npm run build
+
+      # No channelId -> Firebase creates an ephemeral preview channel tied to the PR head ref
+      - name: Deploy preview channel
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           projectId: sarvtek-niche-finder
-        # (no channelId -> auto ephemeral preview per PR)
+
+  # Auto-delete the preview when the PR is closed or merged
+  cleanup_preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete closed PR preview channel
+        uses: FirebaseExtended/action-hosting-delete@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SARVTEK_NICHE_FINDER }}
+          projectId: sarvtek-niche-finder
+          # The channel name defaults to the PR's head ref used by the deploy action
+          channelId: ${{ github.event.pull_request.head.ref }}
