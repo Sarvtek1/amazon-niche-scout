@@ -2,13 +2,20 @@ name: Preview deploy on PR
 
 on:
   pull_request:
-    branches: [ main ]
+    # Build & deploy preview on open/update, then clean up on close
     types: [opened, synchronize, reopened, closed]
+    branches: [ main ]
+
+permissions:
+  contents: read
+  checks: write
 
 jobs:
   build_and_preview:
+    # Only run build/deploy while the PR is open (not on "closed")
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,23 +43,25 @@ jobs:
       - name: Build
         run: npm run build
 
-      # No channelId -> Firebase creates an ephemeral preview channel tied to the PR head ref
       - name: Deploy preview channel
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SARVTEK_NICHE_FINDER }}
           projectId: sarvtek-niche-finder
+          channelId: pr-${{ github.event.number }}  # stable channel name per PR
+          expires: 7d                             # auto-expire preview in 7 days
 
-  # Auto-delete the preview when the PR is closed or merged
   cleanup_preview:
+    # Delete the preview when the PR is closed (merged or closed)
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
-      - name: Delete closed PR preview channel
-        uses: FirebaseExtended/action-hosting-delete@v0
+      - name: Delete preview channel
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SARVTEK_NICHE_FINDER }}
           projectId: sarvtek-niche-finder
-          # The channel name defaults to the PR's head ref used by the deploy action
-          channelId: ${{ github.event.pull_request.head.ref }}
+          channelId: pr-${{ github.event.number }}
+          expires: 1s     # effectively deletes the channel
